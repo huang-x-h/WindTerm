@@ -23,6 +23,9 @@ endif()
 
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core)
 
+# 可选：查找 QtTest (可能没有安装)
+find_package(Qt${QT_VERSION_MAJOR} OPTIONAL_COMPONENTS Test)
+
 message(STATUS "==========================================")
 message(STATUS "WindTerm CSI 2026 Build")
 message(STATUS "==========================================")
@@ -50,8 +53,8 @@ set_target_properties(WindTermCSI2026Demo PROPERTIES
     CXX_STANDARD_REQUIRED ON
 )
 
-# ===== 测试程序 =====
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/Terminal/test_csi2026.cpp)
+# ===== 测试程序 (需要 QtTest) =====
+if(Qt${QT_VERSION_MAJOR}Test_FOUND AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/Terminal/test_csi2026.cpp)
     add_executable(WindTermCSI2026Test
         src/Terminal/test_csi2026.cpp
     )
@@ -59,6 +62,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/Terminal/test_csi2026.cpp)
     target_link_libraries(WindTermCSI2026Test PRIVATE
         Terminal
         Qt${QT_VERSION_MAJOR}::Core
+        Qt${QT_VERSION_MAJOR}::Test
     )
 
     set_target_properties(WindTermCSI2026Test PROPERTIES
@@ -66,6 +70,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/Terminal/test_csi2026.cpp)
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON
     )
+else()
+    message(STATUS "QtTest not found - skipping test build")
 endif()
 
 # Windows 特定配置

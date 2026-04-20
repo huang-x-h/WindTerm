@@ -7,6 +7,9 @@ cmake_minimum_required(VERSION 3.16)
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core)
 
+# Optional: Find QtTest (may not be installed)
+find_package(Qt${QT_VERSION_MAJOR} OPTIONAL_COMPONENTS Test)
+
 # Terminal module sources
 set(TERMINAL_SOURCES
     TerminalMode.cpp
@@ -69,6 +72,30 @@ if(BUILD_CSI2026_EXAMPLE)
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON
     )
+endif()
+
+# Test executable (only if QtTest is available)
+if(Qt${QT_VERSION_MAJOR}Test_FOUND)
+    option(BUILD_CSI2026_TEST "Build CSI 2026 tests" ON)
+
+    if(BUILD_CSI2026_TEST)
+        add_executable(csi2026_test
+            test_csi2026.cpp
+        )
+
+        target_link_libraries(csi2026_test PRIVATE
+            Terminal
+            Qt${QT_VERSION_MAJOR}::Core
+            Qt${QT_VERSION_MAJOR}::Test
+        )
+
+        set_target_properties(csi2026_test PROPERTIES
+            CXX_STANDARD 17
+            CXX_STANDARD_REQUIRED ON
+        )
+    endif()
+else()
+    message(STATUS "QtTest not found - skipping test build")
 endif()
 
 # Installation
