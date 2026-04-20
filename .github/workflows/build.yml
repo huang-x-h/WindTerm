@@ -58,7 +58,7 @@ jobs:
       run: |
         mkdir deploy
         copy build\bin\WindTermCSI2026Demo.exe deploy\
-        copy build\bin\WindTermCSI2026Test.exe deploy\ 2>nul || echo "Test not found"
+        if exist build\bin\WindTermCSI2026Test.exe copy build\bin\WindTermCSI2026Test.exe deploy\
         copy README.md deploy\
         copy INTEGRATION_QUICK.md deploy\
         copy WINDOWS_BUILD_SETUP.md deploy\
@@ -99,7 +99,9 @@ jobs:
           build-essential \
           cmake \
           qtbase5-dev \
-          qtbase5-dev-tools
+          qtbase5-dev-tools \
+          qttools5-dev \
+          qttools5-dev-tools
 
     - name: Configure CMake
       run: |

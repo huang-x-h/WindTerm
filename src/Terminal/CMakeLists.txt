@@ -55,49 +55,6 @@ if(WIN32)
     )
 endif()
 
-# Example executable (optional)
-option(BUILD_CSI2026_EXAMPLE "Build CSI 2026 example" ON)
-
-if(BUILD_CSI2026_EXAMPLE)
-    add_executable(csi2026_example
-        example_csi2026.cpp
-    )
-
-    target_link_libraries(csi2026_example PRIVATE
-        Terminal
-        Qt${QT_VERSION_MAJOR}::Core
-    )
-
-    set_target_properties(csi2026_example PROPERTIES
-        CXX_STANDARD 17
-        CXX_STANDARD_REQUIRED ON
-    )
-endif()
-
-# Test executable (only if QtTest is available)
-if(Qt${QT_VERSION_MAJOR}Test_FOUND)
-    option(BUILD_CSI2026_TEST "Build CSI 2026 tests" ON)
-
-    if(BUILD_CSI2026_TEST)
-        add_executable(csi2026_test
-            test_csi2026.cpp
-        )
-
-        target_link_libraries(csi2026_test PRIVATE
-            Terminal
-            Qt${QT_VERSION_MAJOR}::Core
-            Qt${QT_VERSION_MAJOR}::Test
-        )
-
-        set_target_properties(csi2026_test PROPERTIES
-            CXX_STANDARD 17
-            CXX_STANDARD_REQUIRED ON
-        )
-    endif()
-else()
-    message(STATUS "QtTest not found - skipping test build")
-endif()
-
 # Installation
 install(TARGETS Terminal
     ARCHIVE DESTINATION lib

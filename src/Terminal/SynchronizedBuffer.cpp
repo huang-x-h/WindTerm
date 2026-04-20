@@ -16,6 +16,7 @@
 
 #include "SynchronizedBuffer.h"
 
+#include <QDateTime>
 #include <QElapsedTimer>
 
 SynchronizedBuffer::SynchronizedBuffer(QObject *parent)
