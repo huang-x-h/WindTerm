@@ -31,29 +31,34 @@ jobs:
         host: windows
         target: desktop
         arch: win64_mingw81
+        tools: 'tools_mingw90'
         setup-python: false
 
     - name: Setup MinGW
-      uses: egor-tensin/setup-mingw@v2
-      with:
-        platform: x64
+      run: |
+        echo "MinGW path: ${{ env.Qt5_Dir }}\..\..\Tools\mingw900_64\bin"
+        echo "${{ env.Qt5_Dir }}\..\..\Tools\mingw900_64\bin" >> $GITHUB_PATH
+      shell: bash
 
     - name: Configure CMake
       shell: cmd
       run: |
+        set PATH=%Qt5_Dir%\..\..\Tools\mingw900_64\bin;%PATH%
         cmake -B build -S . -G "MinGW Makefiles" ^
           -DCMAKE_BUILD_TYPE=Release ^
-          -DCMAKE_PREFIX_PATH=${{ env.Qt5_Dir }}
+          -DCMAKE_PREFIX_PATH=%Qt5_Dir%
 
     - name: Build
       shell: cmd
       run: |
+        set PATH=%Qt5_Dir%\..\..\Tools\mingw900_64\bin;%PATH%
         cd build
         mingw32-make -j4
 
     - name: Deploy Qt dependencies
       shell: cmd
       run: |
+        set PATH=%Qt5_Dir%\bin;%PATH%
         mkdir deploy
         copy build\bin\WindTermCSI2026Demo.exe deploy\
         if exist build\bin\WindTermCSI2026Test.exe copy build\bin\WindTermCSI2026Test.exe deploy\
