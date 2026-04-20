@@ -132,12 +132,10 @@ jobs:
         done
 
         # Create run script
-        cat > deploy/WindTermCSI2026/run.sh << 'SCRIPT'
-#!/bin/bash
-DIR="$( cd "$( dirname "$$0" )" && pwd )"
-export LD_LIBRARY_PATH=$DIR/lib:$LD_LIBRARY_PATH
-$DIR/WindTermCSI2026Demo "$@"
-SCRIPT
+        echo '#!/bin/bash' > deploy/WindTermCSI2026/run.sh
+        echo 'DIR="$( cd "$( dirname "$0" )" && pwd )"' >> deploy/WindTermCSI2026/run.sh
+        echo 'export LD_LIBRARY_PATH=$DIR/lib:$LD_LIBRARY_PATH' >> deploy/WindTermCSI2026/run.sh
+        echo '$DIR/WindTermCSI2026Demo "$@"' >> deploy/WindTermCSI2026/run.sh
         chmod +x deploy/WindTermCSI2026/run.sh
 
     - name: Create archive
