@@ -159,76 +159,6 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # macOS 构建
-  build-macos:
-    runs-on: macos-13  # 使用 x86_64 架构，Qt 5.15.2 兼容性更好
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Install Qt
-      uses: jurplel/install-qt-action@v3
-      with:
-        version: ${{ env.QT_VERSION }}
-        host: mac
-        target: desktop
-        arch: clang_64
-        modules: 'qtbase5 qttools5'
-
-    - name: Configure CMake
-      run: |
-        cmake -B build -S . \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_PREFIX_PATH=${{ env.Qt5_Dir }} \
-          -DCMAKE_OSX_ARCHITECTURES=x86_64
-
-    - name: Build
-      run: |
-        cd build
-        make -j$(sysctl -n hw.ncpu)
-
-    - name: Deploy
-      run: |
-        mkdir -p deploy
-        cp -R build/bin/WindTermCSI2026Demo.app deploy/ 2>/dev/null || true
-        cp build/bin/WindTermCSI2026Test deploy/ 2>/dev/null || true
-        cp README.md deploy/
-        cp INTEGRATION_QUICK.md deploy/
-
-        # Deploy Qt dependencies
-        if [ -d "deploy/WindTermCSI2026Demo.app" ]; then
-          macdeployqt deploy/WindTermCSI2026Demo.app
-        fi
-
-    - name: Create DMG
-      run: |
-        if [ -d "deploy/WindTermCSI2026Demo.app" ]; then
-          hdiutil create -volname "WindTermCSI2026" -srcfolder deploy -ov -format UDZO WindTermCSI2026_macOS.dmg
-        else
-          cd deploy && zip -r ../WindTermCSI2026_macOS.zip . && cd ..
-        fi
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: macOS-build
-        path: |
-          WindTermCSI2026_macOS.dmg
-          WindTermCSI2026_macOS.zip
-        if-no-files-found: ignore
-
-    - name: Upload to Release
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          WindTermCSI2026_macOS.dmg
-          WindTermCSI2026_macOS.zip
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   # 代码质量检查
   code-quality:
     runs-on: ubuntu-latest
@@ -255,7 +185,7 @@ jobs:
 
   # 创建 Release (仅在打标签时)
   create-release:
-    needs: [build-windows, build-linux, build-macos]
+    needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -282,7 +212,7 @@ jobs:
         - ✨ CSI 2026 同步输出支持
         - 🚀 高性能终端模式管理
         - 🔒 线程安全实现
-        - 📱 跨平台支持 (Windows/Linux/macOS)
+        - 📱 跨平台支持 (Windows/Linux)
 
         ### 安装说明
 
@@ -294,10 +224,6 @@ jobs:
         1. 下载 `WindTermCSI2026_Linux.tar.gz`
         2. 解压: `tar -xzf WindTermCSI2026_Linux.tar.gz`
         3. 运行: `./WindTermCSI2026/run.sh`
-
-        **macOS:**
-        1. 下载 `WindTermCSI2026_macOS.dmg`
-        2. 打开并拖动到 Applications
 
         ### 测试
         ```bash
@@ -319,7 +245,5 @@ jobs:
         files: |
           artifacts/Windows-build/*.zip
           artifacts/Linux-build/*.tar.gz
-          artifacts/macOS-build/*.dmg
-          artifacts/macOS-build/*.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

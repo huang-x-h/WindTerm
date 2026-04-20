@@ -100,7 +100,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-13]
+        os: [ubuntu-latest, windows-latest]
         qt_version: ['5.15.2']
         build_type: [Release]
 
@@ -123,15 +123,6 @@ jobs:
         target: desktop
         arch: win64_mingw81
 
-    - name: Install Qt (macOS)
-      if: runner.os == 'macOS'
-      uses: jurplel/install-qt-action@v3
-      with:
-        version: ${{ matrix.qt_version }}
-        host: mac
-        target: desktop
-        arch: clang_64
-
     - name: Configure (Linux)
       if: runner.os == 'Linux'
       run: |
@@ -143,13 +134,8 @@ jobs:
       run: |
         cmake -B build -S . -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=%Qt5_Dir%
 
-    - name: Configure (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        cmake -B build -S . -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=$Qt5_DIR -DCMAKE_OSX_ARCHITECTURES=x86_64
-
-    - name: Build (Linux/macOS)
-      if: runner.os != 'Windows'
+    - name: Build (Linux)
+      if: runner.os == 'Linux'
       run: |
         cmake --build build --parallel
 
