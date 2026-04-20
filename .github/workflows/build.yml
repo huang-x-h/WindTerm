@@ -163,7 +163,7 @@ SCRIPT
 
   # macOS 构建
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-13  # 使用 x86_64 架构，Qt 5.15.2 兼容性更好
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -181,7 +181,8 @@ SCRIPT
       run: |
         cmake -B build -S . \
           -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_PREFIX_PATH=${{ env.Qt5_Dir }}
+          -DCMAKE_PREFIX_PATH=${{ env.Qt5_Dir }} \
+          -DCMAKE_OSX_ARCHITECTURES=x86_64
 
     - name: Build
       run: |
