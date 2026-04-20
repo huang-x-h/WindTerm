@@ -25,49 +25,66 @@ TerminalMode::TerminalMode(QObject *parent)
 
 bool TerminalMode::setMode(Mode mode)
 {
-    ThreadLocker<SpinMutex> locker(m_mutex);
+    bool changed = false;
 
-    if (m_enabledModes.contains(mode)) {
-        return false; // 模式已经是启用状态
+    {
+        ThreadLocker<SpinMutex> locker(m_mutex);
+
+        if (m_enabledModes.contains(mode)) {
+            return false; // 模式已经是启用状态
+        }
+
+        m_enabledModes.insert(mode);
+        m_pendingChanges[mode] = true;
+        changed = true;
+    } // 锁在这里自动释放
+
+    if (changed) {
+        emitModeChanges();
     }
 
-    m_enabledModes.insert(mode);
-    m_pendingChanges[mode] = true;
-
-    locker.unlock();
-    emitModeChanges();
-    return true;
+    return changed;
 }
 
 bool TerminalMode::resetMode(Mode mode)
 {
-    ThreadLocker<SpinMutex> locker(m_mutex);
+    bool changed = false;
+    bool needFlush = false;
 
-    if (!m_enabledModes.contains(mode)) {
-        return false; // 模式已经是禁用状态
+    {
+        ThreadLocker<SpinMutex> locker(m_mutex);
+
+        if (!m_enabledModes.contains(mode)) {
+            return false; // 模式已经是禁用状态
+        }
+
+        m_enabledModes.remove(mode);
+        m_pendingChanges[mode] = false;
+        changed = true;
+
+        // 如果是同步输出模式被禁用，触发立即刷新
+        needFlush = (mode == SYNCHRONIZED_OUTPUT);
+    } // 锁在这里自动释放
+
+    if (changed) {
+        emitModeChanges();
     }
-
-    m_enabledModes.remove(mode);
-    m_pendingChanges[mode] = false;
-
-    // 如果是同步输出模式被禁用，触发立即刷新
-    bool needFlush = (mode == SYNCHRONIZED_OUTPUT);
-
-    locker.unlock();
-    emitModeChanges();
 
     if (needFlush) {
         emit flushRequested();
     }
 
-    return true;
+    return changed;
 }
 
 bool TerminalMode::toggleMode(Mode mode)
 {
-    ThreadLocker<SpinMutex> locker(m_mutex);
-    bool currentlyEnabled = m_enabledModes.contains(mode);
-    locker.unlock();
+    bool currentlyEnabled;
+
+    {
+        ThreadLocker<SpinMutex> locker(m_mutex);
+        currentlyEnabled = m_enabledModes.contains(mode);
+    }
 
     if (currentlyEnabled) {
         return resetMode(mode);
@@ -90,26 +107,37 @@ void TerminalMode::saveModes()
 
 void TerminalMode::restoreModes()
 {
-    ThreadLocker<SpinMutex> locker(m_mutex);
+    bool changed = false;
+    bool syncWasDisabled = false;
 
-    // 计算需要禁用的模式
-    QSet<Mode> toDisable = m_enabledModes - m_savedModes;
-    // 计算需要启用的模式
-    QSet<Mode> toEnable = m_savedModes - m_enabledModes;
+    {
+        ThreadLocker<SpinMutex> locker(m_mutex);
 
-    m_enabledModes = m_savedModes;
+        // 计算需要禁用的模式
+        QSet<Mode> toDisable = m_enabledModes - m_savedModes;
+        // 计算需要启用的模式
+        QSet<Mode> toEnable = m_savedModes - m_enabledModes;
 
-    for (Mode mode : toDisable) {
-        m_pendingChanges[mode] = false;
+        if (toDisable.isEmpty() && toEnable.isEmpty()) {
+            return;
+        }
+
+        m_enabledModes = m_savedModes;
+
+        for (Mode mode : toDisable) {
+            m_pendingChanges[mode] = false;
+        }
+        for (Mode mode : toEnable) {
+            m_pendingChanges[mode] = true;
+        }
+
+        syncWasDisabled = toDisable.contains(SYNCHRONIZED_OUTPUT);
+        changed = true;
     }
-    for (Mode mode : toEnable) {
-        m_pendingChanges[mode] = true;
+
+    if (changed) {
+        emitModeChanges();
     }
-
-    bool syncWasDisabled = toDisable.contains(SYNCHRONIZED_OUTPUT);
-
-    locker.unlock();
-    emitModeChanges();
 
     if (syncWasDisabled) {
         emit flushRequested();
@@ -118,18 +146,22 @@ void TerminalMode::restoreModes()
 
 void TerminalMode::resetAllModes()
 {
-    ThreadLocker<SpinMutex> locker(m_mutex);
+    bool syncWasEnabled = false;
+    bool changed = false;
 
-    bool syncWasEnabled = m_enabledModes.contains(SYNCHRONIZED_OUTPUT);
+    {
+        ThreadLocker<SpinMutex> locker(m_mutex);
 
-    m_enabledModes.clear();
-    m_pendingChanges.clear();
+        syncWasEnabled = m_enabledModes.contains(SYNCHRONIZED_OUTPUT);
 
-    // 默认启用的模式
-    m_enabledModes.insert(AUTO_WRAP);
-    m_pendingChanges[AUTO_WRAP] = true;
+        m_enabledModes.clear();
+        m_pendingChanges.clear();
 
-    locker.unlock();
+        // 默认启用的模式
+        m_enabledModes.insert(AUTO_WRAP);
+        m_pendingChanges[AUTO_WRAP] = true;
+        changed = true;
+    }
 
     if (syncWasEnabled) {
         emit flushRequested();

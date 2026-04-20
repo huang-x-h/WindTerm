@@ -31,32 +31,39 @@ SynchronizedBuffer::~SynchronizedBuffer() = default;
 
 bool SynchronizedBuffer::setSynchronizedMode(bool enabled)
 {
-    ThreadLocker<SpinMutex> locker(m_mutex);
+    bool changed = false;
+    bool needFlush = false;
 
-    if (m_synchronizedMode == enabled) {
-        return false;
+    {
+        ThreadLocker<SpinMutex> locker(m_mutex);
+
+        if (m_synchronizedMode == enabled) {
+            return false;
+        }
+
+        m_synchronizedMode = enabled;
+        changed = true;
+
+        if (enabled) {
+            // 启用同步模式，记录开始时间
+            m_syncStartTime = QDateTime::currentMSecsSinceEpoch();
+        } else {
+            // 禁用同步模式，需要刷新缓冲区
+            m_syncStartTime = 0;
+            needFlush = true;
+        }
+    }  // 锁在这里自动释放
+
+    if (changed) {
+        emit synchronizedModeChanged(enabled);
     }
 
-    m_synchronizedMode = enabled;
-
-    if (enabled) {
-        // 启用同步模式，记录开始时间
-        m_syncStartTime = QDateTime::currentMSecsSinceEpoch();
-    } else {
-        // 禁用同步模式，需要刷新缓冲区
-        m_syncStartTime = 0;
-    }
-
-    locker.unlock();
-
-    emit synchronizedModeChanged(enabled);
-
-    // 如果禁用同步模式，立即刷新
-    if (!enabled) {
+    // 如果禁用同步模式，立即刷新 (在锁外调用)
+    if (needFlush) {
         flush();
     }
 
-    return true;
+    return changed;
 }
 
 bool SynchronizedBuffer::isSynchronized() const
@@ -67,25 +74,31 @@ bool SynchronizedBuffer::isSynchronized() const
 
 bool SynchronizedBuffer::write(const BufferItem &item)
 {
-    ThreadLocker<SpinMutex> locker(m_mutex);
+    {
+        ThreadLocker<SpinMutex> locker(m_mutex);
 
-    if (!m_synchronizedMode) {
-        // 非同步模式，直接发送
-        locker.unlock();
-        emit dataReady(QList<BufferItem>() << item);
-        return true;
-    }
+        if (!m_synchronizedMode) {
+            // 非同步模式，直接发送 (复制数据后解锁)
+            emit dataReady(QList<BufferItem>() << item);
+            return true;
+        }
 
-    // 同步模式，添加到缓冲区
-    bool success = appendItem(item);
+        // 同步模式，添加到缓冲区
+        if (!appendItem(item)) {
+            return false;
+        }
 
-    // 检查是否需要自动刷新
-    if (success && needsFlush()) {
-        locker.unlock();
-        flush();
-    }
+        // 检查是否需要自动刷新
+        if (needsFlush()) {
+            // 需要在锁外调用 flush
+        } else {
+            return true;
+        }
+    }  // 锁在这里释放
 
-    return success;
+    // 在锁外调用 flush
+    flush();
+    return true;
 }
 
 bool SynchronizedBuffer::writeData(const QByteArray &data)
