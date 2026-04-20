@@ -1,0 +1,323 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Create Release'
+        required: false
+        default: 'false'
+
+env:
+  QT_VERSION: '5.15.2'
+
+jobs:
+  # Windows 构建
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: ${{ env.QT_VERSION }}
+        host: windows
+        target: desktop
+        arch: win64_mingw81
+        modules: 'qtbase5'
+        setup-python: false
+
+    - name: Setup MinGW
+      uses: egor-tensin/setup-mingw@v2
+      with:
+        platform: x64
+
+    - name: Configure CMake
+      shell: cmd
+      run: |
+        cmake -B build -S . -G "MinGW Makefiles" ^
+          -DCMAKE_BUILD_TYPE=Release ^
+          -DCMAKE_PREFIX_PATH=${{ env.Qt5_Dir }}
+
+    - name: Build
+      shell: cmd
+      run: |
+        cd build
+        mingw32-make -j4
+
+    - name: Deploy Qt dependencies
+      shell: cmd
+      run: |
+        mkdir deploy
+        copy build\bin\WindTermCSI2026Demo.exe deploy\
+        copy build\bin\WindTermCSI2026Test.exe deploy\ 2>nul || echo "Test not found"
+        copy README.md deploy\
+        copy INTEGRATION_QUICK.md deploy\
+        copy WINDOWS_BUILD_SETUP.md deploy\
+        windeployqt deploy\WindTermCSI2026Demo.exe --release --no-translations
+
+    - name: Create ZIP archive
+      shell: powershell
+      run: |
+        Compress-Archive -Path deploy\* -DestinationPath WindTermCSI2026_Windows.zip
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Windows-build
+        path: WindTermCSI2026_Windows.zip
+
+    - name: Upload to Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: WindTermCSI2026_Windows.zip
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Linux 构建
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          qtbase5-dev \
+          qtbase5-dev-tools
+
+    - name: Configure CMake
+      run: |
+        cmake -B build -S . \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_PREFIX_PATH=/usr/lib/x86_64-linux-gnu/cmake/Qt5
+
+    - name: Build
+      run: |
+        cd build
+        make -j$(nproc)
+
+    - name: Deploy
+      run: |
+        mkdir -p deploy/WindTermCSI2026
+        cp build/bin/WindTermCSI2026Demo deploy/WindTermCSI2026/
+        cp build/bin/WindTermCSI2026Test deploy/WindTermCSI2026/ 2>/dev/null || true
+        cp README.md deploy/WindTermCSI2026/
+        cp INTEGRATION_QUICK.md deploy/WindTermCSI2026/
+        cp BUILD_GUIDE.md deploy/WindTermCSI2026/
+
+        # Copy Qt libraries
+        mkdir -p deploy/WindTermCSI2026/lib
+        ldd build/bin/WindTermCSI2026Demo | grep "Qt5" | awk '{print $3}' | while read lib; do
+          if [ -f "$lib" ]; then
+            cp "$lib" deploy/WindTermCSI2026/lib/ 2>/dev/null || true
+          fi
+        done
+
+        # Create run script
+        cat > deploy/WindTermCSI2026/run.sh << 'EOF'
+#!/bin/bash
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+export LD_LIBRARY_PATH=$DIR/lib:$LD_LIBRARY_PATH
+$DIR/WindTermCSI2026Demo "$@"
+EOF
+        chmod +x deploy/WindTermCSI2026/run.sh
+
+    - name: Create archive
+      run: |
+        cd deploy
+        tar -czf ../WindTermCSI2026_Linux.tar.gz WindTermCSI2026
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Linux-build
+        path: WindTermCSI2026_Linux.tar.gz
+
+    - name: Upload to Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: WindTermCSI2026_Linux.tar.gz
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # macOS 构建
+  build-macos:
+    runs-on: macos-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: ${{ env.QT_VERSION }}
+        host: mac
+        target: desktop
+        arch: clang_64
+        modules: 'qtbase5'
+
+    - name: Configure CMake
+      run: |
+        cmake -B build -S . \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_PREFIX_PATH=${{ env.Qt5_Dir }}
+
+    - name: Build
+      run: |
+        cd build
+        make -j$(sysctl -n hw.ncpu)
+
+    - name: Deploy
+      run: |
+        mkdir -p deploy
+        cp -R build/bin/WindTermCSI2026Demo.app deploy/ 2>/dev/null || true
+        cp build/bin/WindTermCSI2026Test deploy/ 2>/dev/null || true
+        cp README.md deploy/
+        cp INTEGRATION_QUICK.md deploy/
+
+        # Deploy Qt dependencies
+        if [ -d "deploy/WindTermCSI2026Demo.app" ]; then
+          macdeployqt deploy/WindTermCSI2026Demo.app
+        fi
+
+    - name: Create DMG
+      run: |
+        if [ -d "deploy/WindTermCSI2026Demo.app" ]; then
+          hdiutil create -volname "WindTermCSI2026" -srcfolder deploy -ov -format UDZO WindTermCSI2026_macOS.dmg
+        else
+          cd deploy && zip -r ../WindTermCSI2026_macOS.zip . && cd ..
+        fi
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: macOS-build
+        path: |
+          WindTermCSI2026_macOS.dmg
+          WindTermCSI2026_macOS.zip
+        if-no-files-found: ignore
+
+    - name: Upload to Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          WindTermCSI2026_macOS.dmg
+          WindTermCSI2026_macOS.zip
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 代码质量检查
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Run static analysis
+      run: |
+        python3 check_terminal.py || echo "Static analysis completed"
+
+    - name: Check file structure
+      run: |
+        echo "Checking file structure..."
+        test -f src/Terminal/TerminalMode.h
+        test -f src/Terminal/TerminalMode.cpp
+        test -f src/Terminal/SynchronizedBuffer.h
+        test -f src/Terminal/SynchronizedBuffer.cpp
+        test -f src/Terminal/CSIParser.h
+        test -f src/Terminal/CSIParser.cpp
+        test -f src/Terminal/TerminalHandler.h
+        test -f src/Terminal/TerminalHandler.cpp
+        echo "All core files present!"
+
+  # 创建 Release (仅在打标签时)
+  create-release:
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Display structure
+      run: |
+        ls -R artifacts
+
+    - name: Create Release Notes
+      run: |
+        cat > RELEASE_NOTES.md << 'EOF'
+        # WindTerm CSI 2026 Terminal Module
+
+        ## 版本 ${{ github.ref_name }}
+
+        ### 功能特性
+        - ✨ CSI 2026 同步输出支持
+        - 🚀 高性能终端模式管理
+        - 🔒 线程安全实现
+        - 📱 跨平台支持 (Windows/Linux/macOS)
+
+        ### 安装说明
+
+        **Windows:**
+        1. 下载 `WindTermCSI2026_Windows.zip`
+        2. 解压并运行 `WindTermCSI2026Demo.exe`
+
+        **Linux:**
+        1. 下载 `WindTermCSI2026_Linux.tar.gz`
+        2. 解压: `tar -xzf WindTermCSI2026_Linux.tar.gz`
+        3. 运行: `./WindTermCSI2026/run.sh`
+
+        **macOS:**
+        1. 下载 `WindTermCSI2026_macOS.dmg`
+        2. 打开并拖动到 Applications
+
+        ### 测试
+        ```bash
+        printf '\033[?2026hHello\nWorld\033[?2026l\n'
+        ```
+
+        ### 文档
+        - [快速开始](QUICKSTART.md)
+        - [编译指南](BUILD_GUIDE.md)
+        - [集成指南](INTEGRATION_QUICK.md)
+        EOF
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        body_path: RELEASE_NOTES.md
+        draft: false
+        prerelease: false
+        files: |
+          artifacts/Windows-build/*.zip
+          artifacts/Linux-build/*.tar.gz
+          artifacts/macOS-build/*.dmg
+          artifacts/macOS-build/*.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

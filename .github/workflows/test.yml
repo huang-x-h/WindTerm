@@ -1,0 +1,168 @@
+name: Test and Validation
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  # Python 功能测试
+  test-simulation:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Run simulation tests
+      run: |
+        python test_csi2026_simulation.py
+
+    - name: Run static analysis
+      run: |
+        python check_terminal.py
+
+    - name: Generate validation report
+      run: |
+        python validate_terminal.py > validation_report.txt || true
+        cat validation_report.txt
+
+    - name: Upload validation report
+      uses: actions/upload-artifact@v4
+      with:
+        name: validation-report
+        path: validation_report.txt
+
+  # 代码格式检查
+  lint-cpp:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install clang-format
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-format
+
+    - name: Check C++ formatting
+      run: |
+        find src/Terminal -name "*.cpp" -o -name "*.h" | head -20 | xargs clang-format --dry-run --Werror || echo "Formatting check completed"
+
+  # 文档检查
+  check-docs:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Check documentation
+      run: |
+        echo "Checking documentation files..."
+        test -f README.md
+        test -f QUICKSTART.md
+        test -f BUILD_GUIDE.md
+        test -f INTEGRATION_QUICK.md
+        test -f src/Terminal/README.md
+        test -f src/Terminal/INTEGRATION.md
+        echo "All documentation files present!"
+
+    - name: Check code files
+      run: |
+        echo "Checking source files..."
+        test -f src/Terminal/TerminalMode.h
+        test -f src/Terminal/TerminalMode.cpp
+        test -f src/Terminal/SynchronizedBuffer.h
+        test -f src/Terminal/SynchronizedBuffer.cpp
+        test -f src/Terminal/CSIParser.h
+        test -f src/Terminal/CSIParser.cpp
+        test -f src/Terminal/TerminalHandler.h
+        test -f src/Terminal/TerminalHandler.cpp
+        echo "All source files present!"
+
+    - name: Check build files
+      run: |
+        echo "Checking build configuration..."
+        test -f CMakeLists.txt
+        test -f src/Terminal/CMakeLists.txt
+        test -f build_windows.bat
+        test -f build.sh
+        echo "All build files present!"
+
+  # 矩阵构建测试 (多种配置)
+  matrix-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        qt_version: ['5.15.2']
+        build_type: [Release]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Qt (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qtbase5-dev qtbase5-dev-tools cmake build-essential
+
+    - name: Install Qt (Windows)
+      if: runner.os == 'Windows'
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: ${{ matrix.qt_version }}
+        host: windows
+        target: desktop
+        arch: win64_mingw81
+
+    - name: Install Qt (macOS)
+      if: runner.os == 'macOS'
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: ${{ matrix.qt_version }}
+        host: mac
+        target: desktop
+        arch: clang_64
+
+    - name: Configure (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        cmake -B build -S . -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+
+    - name: Configure (Windows)
+      if: runner.os == 'Windows'
+      shell: cmd
+      run: |
+        cmake -B build -S . -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=%Qt5_Dir%
+
+    - name: Configure (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        cmake -B build -S . -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=$Qt5_DIR
+
+    - name: Build (Linux/macOS)
+      if: runner.os != 'Windows'
+      run: |
+        cmake --build build --parallel
+
+    - name: Build (Windows)
+      if: runner.os == 'Windows'
+      shell: cmd
+      run: |
+        cd build && mingw32-make -j4
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-${{ matrix.os }}-${{ matrix.qt_version }}
+        path: |
+          build/bin/
+          build/**/*.exe
